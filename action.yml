@@ -1,0 +1,63 @@
+name: 'MCP Config Lint'
+description: 'Validate and security-check a claude_desktop_config.json - catch misconfigurations and exposed credentials before they reach production.'
+author: 'Basil Alshukaili'
+
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  config-path:
+    description: 'Path to the MCP config file to lint (relative to workspace root)'
+    required: false
+    default: 'claude_desktop_config.json'
+  strict:
+    description: 'Treat warnings as failures (exit 1 on any warning)'
+    required: false
+    default: 'false'
+  max-tokens:
+    description: 'Fail if estimated total MCP token cost exceeds this number'
+    required: false
+    default: ''
+  security-only:
+    description: 'Run security checks only (skip structural/schema checks)'
+    required: false
+    default: 'false'
+  python-version:
+    description: 'Python version to use (3.9+)'
+    required: false
+    default: '3.12'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install mcp-config-lint
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install mcp-config-lint
+
+    - name: Run mcp-config-lint
+      shell: bash
+      run: |
+        ARGS="${{ inputs.config-path }}"
+
+        if [ "${{ inputs.strict }}" = "true" ]; then
+          ARGS="$ARGS --strict"
+        fi
+
+        if [ "${{ inputs.security-only }}" = "true" ]; then
+          ARGS="$ARGS --security-only"
+        fi
+
+        if [ -n "${{ inputs.max-tokens }}" ]; then
+          ARGS="$ARGS --max-tokens ${{ inputs.max-tokens }}"
+        fi
+
+        echo "Running: mcp-config-lint $ARGS"
+        mcp-config-lint $ARGS

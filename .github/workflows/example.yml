@@ -1,0 +1,65 @@
+# Example: Run mcp-config-lint as a CI gate in your repository
+#
+# Add this file to your repo at .github/workflows/mcp-lint.yml
+# and commit your claude_desktop_config.json to the repo root.
+#
+# The action will fail the job if it finds errors (or warnings in strict mode),
+# blocking merges until the config is fixed.
+
+name: MCP Config Lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'claude_desktop_config.json'
+      - '.github/workflows/mcp-lint.yml'
+  pull_request:
+    paths:
+      - 'claude_desktop_config.json'
+
+jobs:
+  lint:
+    name: Validate MCP config
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Minimal usage — lint the default claude_desktop_config.json
+      - name: Lint MCP config
+        uses: basilalshukaili/mcp-config-lint@v1
+        with:
+          config-path: claude_desktop_config.json
+
+  # Advanced example: strict mode + token budget + security-only variant
+  lint-strict:
+    name: Validate MCP config (strict)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Lint MCP config (strict, token budget enforced)
+        uses: basilalshukaili/mcp-config-lint@v1
+        with:
+          config-path: claude_desktop_config.json
+          strict: 'true'
+          max-tokens: '50000'
+
+  # Security-only scan example
+  security-scan:
+    name: MCP security scan only
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run security-only MCP lint
+        uses: basilalshukaili/mcp-config-lint@v1
+        with:
+          config-path: claude_desktop_config.json
+          security-only: 'true'
