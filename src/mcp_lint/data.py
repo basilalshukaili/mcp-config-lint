@@ -18,22 +18,38 @@ TOKEN_ESTIMATES: dict[str, dict] = {
                             "note": "Linear exposes many issue/project/team management tools."},
     "notion":              {"tokens": 28000, "tier": "heavy",
                             "note": "Notion schema-rich API results in large tool definitions."},
+    "jira":                {"tokens": 22000, "tier": "heavy",
+                            "note": "Jira project/issue management - large schema."},
     "slack":               {"tokens": 22000, "tier": "heavy",
                             "note": "Slack exposes channel, message, and user management tools."},
+    "confluence":          {"tokens": 16000, "tier": "heavy",
+                            "note": "Confluence pages and spaces management."},
+    "hubspot":             {"tokens": 18000, "tier": "heavy",
+                            "note": "CRM contacts, deals, companies toolset."},
     "sentry":              {"tokens": 18000, "tier": "heavy",
                             "note": "Sentry surfaces many issue, project, and org management tools."},
+    "stripe":              {"tokens": 14000, "tier": "heavy",
+                            "note": "Payments, subscriptions, customers - many tools."},
     "supabase":            {"tokens": 16000, "tier": "heavy",
                             "note": "Supabase MCP exposes database, auth, and storage management tools."},
+    "datadog":             {"tokens": 12000, "tier": "medium",
+                            "note": "Metrics, monitors, and dashboards toolset."},
     "postgres":            {"tokens": 8000,  "tier": "medium",
                             "note": "SQL execution + schema introspection. Relatively lean."},
     "postgresql":          {"tokens": 8000,  "tier": "medium",
                             "note": "SQL execution + schema introspection. Relatively lean."},
+    "mongodb":             {"tokens": 7000,  "tier": "medium",
+                            "note": "CRUD operations on collections."},
+    "mysql":               {"tokens": 7000,  "tier": "medium",
+                            "note": "SQL operations, similar to postgres."},
     "gdrive":              {"tokens": 7000,  "tier": "medium",
                             "note": "File list, read, and search tools."},
     "aws-kb-retrieval":    {"tokens": 6000,  "tier": "medium",
                             "note": "AWS Bedrock Knowledge Base retrieval - focused toolset."},
     "redis":               {"tokens": 5000,  "tier": "medium",
                             "note": "Key/value get, set, delete, list operations."},
+    "playwright":          {"tokens": 5000,  "tier": "medium",
+                            "note": "Browser automation similar to puppeteer."},
     "brave-search":        {"tokens": 4000,  "tier": "medium",
                             "note": "Search + local results. Well-scoped."},
     "google-maps":         {"tokens": 4500,  "tier": "medium",
@@ -52,6 +68,8 @@ TOKEN_ESTIMATES: dict[str, dict] = {
                             "note": "Single fetch tool. Very lean."},
     "time":                {"tokens": 1000,  "tier": "light",
                             "note": "get_current_time tool. Minimal overhead."},
+    "openai":              {"tokens": 3000,  "tier": "light",
+                            "note": "Thin wrapper around OpenAI API."},
     "sqlite":              {"tokens": 3500,  "tier": "light",
                             "note": "SQL read/write on a local SQLite file."},
     "mcp-server-git":      {"tokens": 3000,  "tier": "light",
@@ -89,6 +107,20 @@ REQUIRED_ENV: dict[str, list[str]] = {
     "linear":            ["LINEAR_API_KEY"],
     "sentry":            ["SENTRY_AUTH_TOKEN"],
     "aws-kb-retrieval":  ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"],
+    "notion":            ["NOTION_API_KEY"],
+    "openai":            ["OPENAI_API_KEY"],
+    "anthropic":         ["ANTHROPIC_API_KEY"],
+    "jira":              ["JIRA_API_TOKEN"],
+    "confluence":        ["CONFLUENCE_API_TOKEN"],
+    "hubspot":           ["HUBSPOT_ACCESS_TOKEN"],
+    "stripe":            ["STRIPE_SECRET_KEY"],
+    "twilio":            ["TWILIO_AUTH_TOKEN"],
+    "sendgrid":          ["SENDGRID_API_KEY"],
+    "datadog":           ["DD_API_KEY"],
+    "pagerduty":         ["PAGERDUTY_API_KEY"],
+    "zendesk":           ["ZENDESK_API_TOKEN"],
+    "airtable":          ["AIRTABLE_API_KEY"],
+    "mongodb":           ["MONGODB_URI"],
 }
 
 # ---------------------------------------------------------------------------
@@ -102,6 +134,8 @@ PLACEHOLDER_VALUES: frozenset[str] = frozenset({
     "YOUR_TOKEN", "YOUR_API_KEY", "INSERT_API_KEY_HERE", "<YOUR_TOKEN>",
     "PLACEHOLDER", "placeholder", "changeme", "your-token-here",
     "your-api-key", "your-slack-bot-token", "your-slack-team-id",
+    "sk-your-openai-api-key", "sk-proj-placeholder",
+    "your_notion_api_key", "secret_placeholder",
 })
 
 PATH_PLACEHOLDER_VALUES: frozenset[str] = frozenset({
@@ -142,6 +176,8 @@ WRITE_ACCESS_SERVERS: frozenset[str] = frozenset({
     "filesystem", "github", "slack", "gdrive", "postgres",
     "postgresql", "redis", "linear", "sentry", "notion", "memory",
     "sqlite", "mcp-server-sqlite", "mcp-server-git", "git", "supabase",
+    "mongodb", "mysql", "stripe", "hubspot", "jira", "confluence",
+    "airtable",
 })
 
 # ---------------------------------------------------------------------------
@@ -160,6 +196,10 @@ BROAD_SCOPE_SERVERS: dict[str, str] = {
                  "with it. Limit in Notion integration settings."),
     "supabase": ("SUPABASE_ACCESS_TOKEN - management API token grants access to all your "
                  "Supabase projects."),
+    "stripe":   ("STRIPE_SECRET_KEY - grants full account access. Use restricted keys "
+                 "with only the resources/permissions your MCP server needs."),
+    "hubspot":  ("HUBSPOT_ACCESS_TOKEN - private app token grants access to all CRM data "
+                 "for the scopes selected during setup."),
 }
 
 # ---------------------------------------------------------------------------
@@ -167,5 +207,29 @@ BROAD_SCOPE_SERVERS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 NETWORK_SERVERS: tuple[str, ...] = (
     "puppeteer", "playwright", "browser", "fetch", "mcp-server-fetch",
-    "selenium", "webdriver", "http", "proxy",
+    "selenium", "webdriver", "http", "proxy", "browser-use",
+    "web", "scraper", "crawler", "curl",
 )
+
+# ---------------------------------------------------------------------------
+# Secret patterns: high-entropy / format-specific tokens that should never
+# appear directly in args (rather than env vars).
+# Each entry: (regex_pattern, human_readable_description)
+# ---------------------------------------------------------------------------
+SECRET_ARG_PATTERNS: list[tuple[str, str]] = [
+    (r"ghp_[A-Za-z0-9]{36,}", "GitHub classic PAT"),
+    (r"github_pat_[A-Za-z0-9_]{82,}", "GitHub fine-grained PAT"),
+    (r"ghs_[A-Za-z0-9]{36,}", "GitHub Actions token"),
+    (r"sk-[A-Za-z0-9]{48,}", "OpenAI API key"),
+    (r"sk-proj-[A-Za-z0-9\-_]{50,}", "OpenAI project key"),
+    (r"xoxb-[0-9]+-[A-Za-z0-9\-]+", "Slack bot token"),
+    (r"xoxp-[0-9]+-[A-Za-z0-9\-]+", "Slack user token"),
+    (r"AKIA[0-9A-Z]{16}", "AWS access key ID"),
+    (r"AIza[A-Za-z0-9\-_]{35}", "Google API key"),
+    (r"ya29\.[A-Za-z0-9\-_]{50,}", "Google OAuth token"),
+    (r"pypi-[A-Za-z0-9\-_]{50,}", "PyPI upload token"),
+    (r"glpat-[A-Za-z0-9\-_]{20,}", "GitLab PAT"),
+    (r"lin_api_[A-Za-z0-9]{40,}", "Linear API key"),
+    (r"secret_[A-Za-z0-9]{43,}", "Notion integration token"),
+    (r"dp\.pt\.[A-Za-z0-9\-_]{43,}", "DigitalOcean PAT"),
+]

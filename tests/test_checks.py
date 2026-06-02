@@ -184,6 +184,20 @@ class TestRequiredEnv:
         env_errors = [f for f in findings if "env" in f.code and f.is_error()]
         assert not env_errors
 
+    def test_notion_requires_api_key(self):
+        cfg = {"command": "npx",
+               "args": ["-y", "notion-mcp"]}
+        findings = check_server("notion", cfg)
+        assert "server:missing-env-object" in _codes(findings)
+
+    def test_stripe_requires_secret_key(self):
+        cfg = {"command": "npx",
+               "args": ["-y", "stripe-mcp"],
+               "env": {"STRIPE_SECRET_KEY": "sk_live_realkey123"}}
+        findings = check_server("stripe", cfg)
+        env_errors = [f for f in findings if "env" in f.code and f.is_error()]
+        assert not env_errors
+
 
 # ---------------------------------------------------------------------------
 # check_server — placeholder args
@@ -244,6 +258,58 @@ class TestPerServerGotchas:
                "env": {"BRAVE_API_KEY": "BSA-real-abc123"}}
         findings = check_server("brave-search", cfg)
         assert "gotcha:brave-search-quota" in _codes(findings)
+
+    def test_filesystem_docker_socket_warning(self):
+        cfg = {"command": "npx",
+               "args": ["-y", "@modelcontextprotocol/server-filesystem",
+                        "/var/run/docker.sock"]}
+        findings = check_server("filesystem", cfg)
+        assert "gotcha:filesystem-docker-socket" in _codes(findings)
+
+    def test_notion_oauth_token_warning(self):
+        cfg = {"command": "npx",
+               "args": ["-y", "notion-mcp"],
+               "env": {"NOTION_API_KEY": "ntn_someOAuthToken123"}}
+        findings = check_server("notion", cfg)
+        assert "gotcha:notion-oauth-token" in _codes(findings)
+
+    def test_notion_invalid_token_format(self):
+        cfg = {"command": "npx",
+               "args": ["-y", "notion-mcp"],
+               "env": {"NOTION_API_KEY": "tok_invalidformat123"}}
+        findings = check_server("notion", cfg)
+        assert "gotcha:notion-invalid-token-format" in _codes(findings)
+
+    def test_notion_valid_token_no_warning(self):
+        cfg = {"command": "npx",
+               "args": ["-y", "notion-mcp"],
+               "env": {"NOTION_API_KEY": "secret_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm"}}
+        findings = check_server("notion", cfg)
+        notion_token_warns = [f for f in findings
+                              if f.code in ("gotcha:notion-oauth-token",
+                                            "gotcha:notion-invalid-token-format")]
+        assert not notion_token_warns
+
+    def test_browser_no_sandbox_warning(self):
+        cfg = {"command": "npx",
+               "args": ["-y", "@modelcontextprotocol/server-puppeteer", "--no-sandbox"]}
+        findings = check_server("puppeteer", cfg)
+        assert "gotcha:browser-no-sandbox" in _codes(findings)
+
+    def test_stripe_live_key_warning(self):
+        cfg = {"command": "npx",
+               "args": ["-y", "stripe-mcp"],
+               "env": {"STRIPE_SECRET_KEY": "sk_live_realproductionkey12345"}}
+        findings = check_server("stripe", cfg)
+        assert "gotcha:stripe-live-key" in _codes(findings)
+
+    def test_stripe_test_key_no_warning(self):
+        cfg = {"command": "npx",
+               "args": ["-y", "stripe-mcp"],
+               "env": {"STRIPE_SECRET_KEY": "sk_test_sometestkey12345"}}
+        findings = check_server("stripe", cfg)
+        live_warnings = [f for f in findings if f.code == "gotcha:stripe-live-key"]
+        assert not live_warnings
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +387,72 @@ class TestSecurityChecks:
         findings = check_security("time", cfg)
         assert "sec:write-access" not in _codes(findings)
 
+    def test_secret_in_args_github_pat(self):
+        """GitHub PAT found directly in args should trigger sec:secret-in-args."""
+        cfg = {"command": "npx",
+               "args": ["-y", "some-server",
+                        "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef123456"]}
+        findings = check_security("custom-server", cfg)
+        assert "sec:secret-in-args" in _codes(findings)
+
+    def test_secret_in_args_openai_key(self):
+        """OpenAI key found directly in args should trigger sec:secret-in-args."""
+        # OpenAI classic key: sk- followed by at least 48 alphanumeric chars
+        cfg = {"command": "npx",
+               "args": ["-y", "some-server",
+                        "sk-" + "A" * 48]}
+        findings = check_security("custom-server", cfg)
+        assert "sec:secret-in-args" in _codes(findings)
+
+    def test_secret_in_args_slack_token(self):
+        """Slack bot token in args triggers sec:secret-in-args."""
+        cfg = {"command": "npx",
+               "args": ["--token", "xoxb-123456789-ABCDEFGHIJK"]}
+        findings = check_security("slack-proxy", cfg)
+        assert "sec:secret-in-args" in _codes(findings)
+
+    def test_private_key_in_env(self):
+        """Raw private key content in env var triggers sec:private-key-in-env."""
+        cfg = {"command": "uvx",
+               "args": ["my-server"],
+               "env": {"PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAK...\n-----END RSA PRIVATE KEY-----"}}
+        findings = check_security("custom", cfg)
+        assert "sec:private-key-in-env" in _codes(findings)
+
+    def test_certificate_in_env(self):
+        """Raw certificate in env var triggers sec:private-key-in-env."""
+        cfg = {"command": "uvx",
+               "args": ["my-server"],
+               "env": {"TLS_CERT": "-----BEGIN CERTIFICATE-----\nMIIEowIBAAK...\n-----END CERTIFICATE-----"}}
+        findings = check_security("custom", cfg)
+        assert "sec:private-key-in-env" in _codes(findings)
+
+    def test_no_false_positive_for_normal_env_values(self):
+        """Normal env values should not trigger sec:secret-in-args or sec:private-key-in-env."""
+        cfg = {"command": "npx",
+               "args": ["-y", "@modelcontextprotocol/server-github"],
+               "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_realtoken123",
+                       "DEBUG": "true",
+                       "PORT": "3000"}}
+        findings = check_security("github", cfg)
+        assert "sec:private-key-in-env" not in _codes(findings)
+
+    def test_stripe_write_access_flagged(self):
+        """New WRITE_ACCESS_SERVERS entry: stripe should be flagged."""
+        cfg = {"command": "npx",
+               "args": ["-y", "stripe-mcp"],
+               "env": {"STRIPE_SECRET_KEY": "sk_live_realkey"}}
+        findings = check_security("stripe", cfg)
+        assert "sec:write-access" in _codes(findings)
+
+    def test_hubspot_broad_scope_flagged(self):
+        """New BROAD_SCOPE_SERVERS entry: hubspot should be flagged."""
+        cfg = {"command": "npx",
+               "args": ["-y", "hubspot-mcp"],
+               "env": {"HUBSPOT_ACCESS_TOKEN": "pat-na1-realtoken"}}
+        findings = check_security("hubspot", cfg)
+        assert "sec:broad-scope" in _codes(findings)
+
 
 # ---------------------------------------------------------------------------
 # Token cost checks
@@ -360,6 +492,14 @@ class TestTokenCost:
         }
         findings = check_token_cost(servers, max_tokens=None)
         assert "token:high-context-tax" in _codes(findings)
+
+    def test_new_server_token_estimates_present(self):
+        """jira, confluence, stripe, hubspot should all have token estimates."""
+        for srv_name in ("jira", "confluence", "stripe", "hubspot"):
+            servers = {srv_name: {"command": "npx", "args": ["-y", "some-pkg"]}}
+            findings = check_token_cost(servers, max_tokens=None)
+            token_infos = [f for f in findings if f.code.startswith("token:estimate")]
+            assert token_infos, f"No token estimate for {srv_name}"
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +562,32 @@ class TestRunAllChecks:
         }
         findings = run_all_checks(config, max_tokens=100)
         assert "token:exceeds-max" in _codes(findings)
+
+    def test_secret_in_args_caught_by_run_all(self):
+        config = {
+            "mcpServers": {
+                "my-tool": {
+                    "command": "npx",
+                    "args": ["-y", "some-mcp-server",
+                             "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef123456"],
+                }
+            }
+        }
+        findings = run_all_checks(config)
+        assert "sec:secret-in-args" in _codes(findings)
+
+    def test_private_key_in_env_caught_by_run_all(self):
+        config = {
+            "mcpServers": {
+                "my-tool": {
+                    "command": "uvx",
+                    "args": ["some-server"],
+                    "env": {"MY_KEY": "-----BEGIN RSA PRIVATE KEY-----\nfoo\n-----END RSA PRIVATE KEY-----"}
+                }
+            }
+        }
+        findings = run_all_checks(config)
+        assert "sec:private-key-in-env" in _codes(findings)
 
 
 # ---------------------------------------------------------------------------
@@ -525,3 +691,20 @@ class TestCLIIntegration:
             capture_output=True, text=True,
         )
         assert result.returncode != 0
+
+    def test_secret_in_args_reported_in_json(self):
+        """Verify sec:secret-in-args flows through to JSON output."""
+        config = {
+            "mcpServers": {
+                "my-tool": {
+                    "command": "npx",
+                    "args": ["-y", "some-pkg",
+                             "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef123456"],
+                }
+            }
+        }
+        rc, out, _ = self._run(config, "--json")
+        data = json.loads(out)
+        codes = {f["code"] for f in data["findings"]}
+        assert "sec:secret-in-args" in codes
+        assert rc != 0

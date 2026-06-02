@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-config-lint"
-version = "0.1.1"
+version = "0.2.0"
 description = "Validate and security-check claude_desktop_config.json — CI-friendly CLI"
 readme = "README.md"
 license = { text = "MIT" }
@@ -29,8 +29,9 @@ dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/basilalshukaili/mcp-config-lint"
-Repository = "https://github.com/basilalshukaili/mcp-lint"
-"Bug Tracker" = "https://github.com/basilalshukaili/mcp-lint/issues"
+Repository = "https://github.com/basilalshukaili/mcp-config-lint"
+"Bug Tracker" = "https://github.com/basilalshukaili/mcp-config-lint/issues"
+Changelog = "https://github.com/basilalshukaili/mcp-config-lint/blob/main/CHANGELOG.md"
 
 [project.scripts]
 mcp-config-lint = "mcp_lint.cli:main"
@@ -43,6 +44,8 @@ include = [
     "src/",
     "tests/",
     "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "LICENSE",
 ]
 

@@ -1,7 +1,6 @@
 """
 Check engine for mcp-lint.
 Each check returns a list of Finding objects.
-Ported from the JS audit engine in /opt/ai-company/web/driftwatch/tools/mcp-audit/index.html
 """
 from __future__ import annotations
 
@@ -16,6 +15,7 @@ from .data import (
     PATH_PLACEHOLDER_VALUES,
     PLACEHOLDER_VALUES,
     REQUIRED_ENV,
+    SECRET_ARG_PATTERNS,
     TOKEN_DEFAULT_UNKNOWN,
     TOKEN_ESTIMATES,
     TOKEN_WARN_THRESHOLD,
@@ -268,6 +268,13 @@ def _per_server_gotchas(name: str, cfg: dict) -> list[Finding]:
                     message=f'Filesystem path "{a}" appears to be relative.',
                     fix="Use an absolute path (e.g. /Users/you/projects). Relative paths break when Claude spawns the server from a different working directory.",
                 ))
+            # Check for Docker socket mount - a common and serious mistake
+            if "/var/run/docker.sock" in a:
+                findings.append(Finding(
+                    level=Level.WARNING, server=name, code="gotcha:filesystem-docker-socket",
+                    message='Filesystem path includes the Docker socket (/var/run/docker.sock).',
+                    fix="Granting Claude access to the Docker socket allows container escape to the host. Remove this path unless you specifically need Docker management.",
+                ))
         findings.append(Finding(
             level=Level.INFO, server=name, code="gotcha:filesystem-write-access",
             message="filesystem gives Claude READ + WRITE access to all listed paths.",
@@ -348,6 +355,43 @@ def _per_server_gotchas(name: str, cfg: dict) -> list[Finding]:
             message="Sentry auth token needs org:read and project:read scopes.",
             fix="Create tokens at: https://sentry.io/settings/account/api/auth-tokens/",
         ))
+
+    if n == "notion":
+        api_key = env.get("NOTION_API_KEY", "")
+        if api_key and not _is_placeholder(api_key):
+            # Notion integration tokens start with secret_; OAuth tokens start with ntn_
+            if api_key.startswith("ntn_"):
+                findings.append(Finding(
+                    level=Level.WARNING, server=name, code="gotcha:notion-oauth-token",
+                    message='Notion OAuth token detected (ntn_...). OAuth tokens expire and must be refreshed.',
+                    fix="For persistent MCP access, create a Notion integration token (starts with secret_) at https://www.notion.so/my-integrations",
+                ))
+            elif not api_key.startswith("secret_"):
+                findings.append(Finding(
+                    level=Level.WARNING, server=name, code="gotcha:notion-invalid-token-format",
+                    message="NOTION_API_KEY does not match the expected format (should start with secret_).",
+                    fix="Create an internal integration token at https://www.notion.so/my-integrations",
+                ))
+
+    if n in ("puppeteer", "playwright"):
+        # Check if running in a context that might expose screenshots or sensitive data
+        for arg in args:
+            a = str(arg)
+            if "--no-sandbox" in a:
+                findings.append(Finding(
+                    level=Level.WARNING, server=name, code="gotcha:browser-no-sandbox",
+                    message=f'"{name}" is configured with --no-sandbox, disabling Chromium security sandboxing.',
+                    fix="Only use --no-sandbox if required by your environment (e.g. inside Docker). It weakens browser isolation.",
+                ))
+
+    if n == "stripe":
+        sk = env.get("STRIPE_SECRET_KEY", "")
+        if sk and not _is_placeholder(sk) and sk.startswith("sk_live_"):
+            findings.append(Finding(
+                level=Level.WARNING, server=name, code="gotcha:stripe-live-key",
+                message="Stripe LIVE secret key detected. This key can create real charges.",
+                fix="Consider using a restricted key with only the permissions needed. Test with sk_test_ keys during development.",
+            ))
 
     return findings
 
@@ -460,6 +504,28 @@ def check_security(name: str, cfg: dict) -> list[Finding]:
                     message=f'filesystem path "{a}" covers a full home directory.',
                     fix="This includes dotfiles, SSH keys, ~/.aws credentials, browser profiles. Scope to a specific subdirectory.",
                 ))
+
+    # 9. Secrets detected directly in args (should be in env vars instead)
+    for arg in args:
+        a = str(arg)
+        for pattern, description in SECRET_ARG_PATTERNS:
+            if re.search(pattern, a):
+                findings.append(Finding(
+                    level=Level.SECURITY_HIGH, server=name, code="sec:secret-in-args",
+                    message=f'Possible {description} found directly in args array.',
+                    fix="Move credentials to the env object. Args are visible in process lists (ps aux) and shell history.",
+                ))
+                break  # Only report once per arg
+
+    # 10. Private key content in env vars
+    for ek, ev in env.items():
+        ev_str = str(ev)
+        if "-----BEGIN" in ev_str and ("PRIVATE KEY" in ev_str or "CERTIFICATE" in ev_str):
+            findings.append(Finding(
+                level=Level.SECURITY_HIGH, server=name, code="sec:private-key-in-env",
+                message=f'env var "{ek}" appears to contain a raw private key or certificate.',
+                fix="Store private keys as files on disk (chmod 600) and reference them by path. Never embed key material in config files.",
+            ))
 
     return findings
 
