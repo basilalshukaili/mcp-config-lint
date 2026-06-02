@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "."
+          pip install pytest
+
+      - name: Run tests
+        run: pytest -v
+
+  build-check:
+    name: Build & twine check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel and sdist
+        run: |
+          pip install build twine
+          python -m build
+
+      - name: Check distribution with twine
+        run: twine check dist/*
+
+  lint-self:
+    name: Lint own MCP config (if present)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -e "."
+
+      - name: Run mcp-lint on example config
+        run: |
+          if [ -f claude_desktop_config.json ]; then
+            mcp-lint --strict claude_desktop_config.json
+          else
+            echo "No claude_desktop_config.json found, skipping."
+          fi
